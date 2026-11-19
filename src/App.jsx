@@ -5,9 +5,10 @@ import ProfileDialog from './features/account/ProfileDialog.jsx'
 import ProfileMenu, { initials } from './features/account/ProfileMenu.jsx'
 import ConversationHistory from './features/history/ConversationHistory.jsx'
 import './features/account/account.css'
+import { apiFetch } from './api.js'
 
 async function apiRequest(url, options = {}) {
-  const response = await fetch(url, { credentials: 'same-origin', ...options, headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers } })
+  const response = await apiFetch(url, { ...options, headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers } })
   const data = response.status === 204 ? null : await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(data?.detail || 'The request could not be completed.')
   return data
@@ -63,7 +64,7 @@ export default function App() {
   const inputRef = useRef(null)
   const fileRef = useRef(null)
 
-  useEffect(() => { fetch('/api/health').then(r => r.json()).then(d => setMode(d.mode)).catch(() => {}) }, [])
+  useEffect(() => { apiFetch('/api/health').then(r => r.json()).then(d => setMode(d.mode)).catch(() => {}) }, [])
   useEffect(() => {
     let mounted = true
     apiRequest('/api/auth/me').then(account => {
@@ -121,7 +122,7 @@ export default function App() {
     if (file) {
       try {
         const form = new FormData(); form.append('file', file)
-        const response = await fetch('/api/documents', { method: 'POST', body: form })
+        const response = await apiFetch('/api/documents', { method: 'POST', body: form })
         const result = await response.json()
         if (!response.ok) throw new Error(result.detail || 'Could not read the PDF.')
         attached = result; setDocument(result); setFile(null)
@@ -131,7 +132,7 @@ export default function App() {
     }
     try {
       const prior = messages.slice(-10).map(m => ({ role: m.role, content: m.content }))
-      const response = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message, language, history: prior, document: attached, conversation_id: activeConversationId }), credentials: 'same-origin' })
+      const response = await apiFetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message, language, history: prior, document: attached, conversation_id: activeConversationId }) })
       const result = await response.json()
       if (!response.ok) throw new Error(result.detail || 'The assistant could not respond.')
       setMode(result.mode || 'demo')

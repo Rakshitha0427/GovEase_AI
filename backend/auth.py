@@ -87,14 +87,20 @@ def public_user(user: dict) -> UserResponse:
 
 
 def _cookie_secure() -> bool:
-    return os.getenv("SESSION_COOKIE_SECURE", "false").strip().lower() in {"1", "true", "yes"}
+    configured_secure = os.getenv("SESSION_COOKIE_SECURE", "false").strip().lower() in {"1", "true", "yes"}
+    return configured_secure or _cookie_samesite() == "none"
+
+
+def _cookie_samesite() -> str:
+    configured = os.getenv("SESSION_COOKIE_SAMESITE", "lax").strip().lower()
+    return configured if configured in {"lax", "strict", "none"} else "lax"
 
 
 def set_session_cookie(response: Response, db: Database, user_id: ObjectId) -> None:
     token = new_session_token()
     expires = datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS)
     db.sessions.insert_one({"_id": hash_session_token(token), "user_id": user_id, "expires_at": expires, "created_at": datetime.now(timezone.utc)})
-    response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_DAYS * 24 * 60 * 60, httponly=True, secure=_cookie_secure(), samesite="lax", path="/")
+    response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_DAYS * 24 * 60 * 60, httponly=True, secure=_cookie_secure(), samesite=_cookie_samesite(), path="/")
 
 
 def resolve_session(db: Database, token: str) -> Optional[dict]:
@@ -164,7 +170,7 @@ def logout(request: Request, response: Response):
         except (HTTPException, PyMongoError):
             # Clear the browser cookie even if the database is temporarily unavailable.
             pass
-    response.delete_cookie(SESSION_COOKIE, httponly=True, secure=_cookie_secure(), samesite="lax", path="/")
+    response.delete_cookie(SESSION_COOKIE, httponly=True, secure=_cookie_secure(), samesite=_cookie_samesite(), path="/")
 
 
 @router.get("/me", response_model=UserResponse)

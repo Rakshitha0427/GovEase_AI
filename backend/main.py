@@ -10,6 +10,7 @@ from dotenv import dotenv_values, load_dotenv
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from starlette.responses import JSONResponse
 
 ROOT = Path(__file__).resolve().parent
 ENV_FILE = ROOT.parent / ".env"
@@ -29,11 +30,28 @@ from backend.history import ensure_conversation_owner, persist_chat, router as h
 logger = logging.getLogger(__name__)
 SCHEMES = json.loads((ROOT / "schemes.json").read_text(encoding="utf-8"))
 MAX_UPLOAD = int(os.getenv("MAX_UPLOAD_MB", "10")) * 1024 * 1024
+LOCAL_FRONTEND_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
+CONFIGURED_FRONTEND_ORIGINS = [origin.strip().rstrip("/") for origin in os.getenv("FRONTEND_ORIGINS", "").split(",") if origin.strip()]
+if "*" in CONFIGURED_FRONTEND_ORIGINS:
+    raise RuntimeError("FRONTEND_ORIGINS must list explicit origins when credentials are enabled.")
+if APP_ENV == "production" and not CONFIGURED_FRONTEND_ORIGINS:
+    raise RuntimeError("Set FRONTEND_ORIGINS to the deployed frontend origin in production.")
+ALLOWED_ORIGINS = CONFIGURED_FRONTEND_ORIGINS if APP_ENV == "production" else list(dict.fromkeys(LOCAL_FRONTEND_ORIGINS + CONFIGURED_FRONTEND_ORIGINS))
 app = FastAPI(title="GovEase AI API", version="0.1.0")
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"], allow_methods=["*"], allow_headers=["*"], allow_credentials=True)
+app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_methods=["*"], allow_headers=["*"], allow_credentials=True)
 app.state.database_provider = get_database
 app.include_router(auth_router)
 app.include_router(history_router)
+
+
+@app.middleware("http")
+async def enforce_browser_write_origin(request: Request, call_next):
+    if request.method not in {"GET", "HEAD", "OPTIONS"}:
+        origin = request.headers.get("origin")
+        if origin and origin.strip().rstrip("/") not in ALLOWED_ORIGINS:
+            return JSONResponse(status_code=403, content={"detail": "Request origin is not allowed."})
+    return await call_next(request)
 
 
 class ChatRequest(BaseModel):

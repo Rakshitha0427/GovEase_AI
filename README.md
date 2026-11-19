@@ -11,7 +11,7 @@ A conversational government services assistant MVP. The app includes scheme disc
 5. Start the API: `uvicorn backend.main:app --reload --port 8000`
 6. In a second terminal start the UI: `npm run dev`.
 
-The Vite server proxies `/api` to the FastAPI server. API documentation is available at `/docs`.
+The Vite server proxies `/api` to the FastAPI server when `VITE_API_BASE_URL` is unset. API documentation is available at `/docs`.
 
 When you add or change `.env`, restart the FastAPI server so it reloads the configuration. The API key is read only by the backend and is never sent to the React application. If Gemini is configured but the provider call fails or returns an empty response, the API returns a generic error rather than silently switching to demo output.
 
@@ -20,6 +20,16 @@ When you add or change `.env`, restart the FastAPI server so it reloads the conf
 Create a MongoDB Atlas cluster and database user, allow the development machine's IP address, then place the Atlas connection URI in the backend-only `MONGODB_URI` setting in `.env`. The application creates required collections and indexes on first account use. Passwords are stored as scrypt hashes; session tokens are random, stored only as hashes, and issued in HttpOnly cookies. Conversation queries are scoped to the signed-in user's ID. Uploaded PDF files are not stored.
 
 Install the test-only dependency with `pip install -r requirements-dev.txt`, then run `python -m unittest backend.test_accounts backend.test_gemini -v`. Account and history tests use an in-memory MongoDB mock and do not need an Atlas URI.
+
+## Production deployment (Vercel + Render)
+
+The root `vercel.json` builds and serves the Vite app. In Vercel, set the public build variable `VITE_API_BASE_URL` to the Render backend's HTTPS origin (for example, `https://your-service.onrender.com`, with no `/api` suffix), then deploy the repository root as a Vite project. The app uses relative `/api` paths through the Vite proxy locally and the configured backend origin in production.
+
+The root `render.yaml` defines the FastAPI web service, health check, and `uvicorn` start command bound to `0.0.0.0:$PORT`. In Render, provide these secret/configuration values when prompted or in the service environment: `GEMINI_API_KEY`, `MONGODB_URI`, and `FRONTEND_ORIGINS` (the exact Vercel HTTPS origin; comma-separate any additional allowed frontend origins). The Blueprint sets `APP_ENV=production`, `SESSION_COOKIE_SECURE=true`, and `SESSION_COOKIE_SAMESITE=none`; keep these production cookie settings. `MONGODB_DATABASE`, `GEMINI_MODEL`, and `MAX_UPLOAD_MB` have non-secret defaults in the Blueprint and can be adjusted there.
+
+The backend uses credentialed CORS and rejects unsafe browser requests whose `Origin` is not allowed. Vercel and Render use different site domains, so the session cookie is `SameSite=None; Secure`. Browser privacy settings may restrict cross-site cookies; for the most reliable sessions, use custom frontend/backend domains under the same registrable domain (for example, `app.example.com` and `api.example.com`) and set `FRONTEND_ORIGINS` to the frontend origin.
+
+Render supplies `PORT`; do not set a secret or fixed port in source. No `SESSION_SECRET` is needed: sessions use random opaque tokens stored only as hashes in MongoDB. Never set Gemini or MongoDB credentials as `VITE_*` variables; Vite variables are public in the built frontend.
 
 ## Data and accuracy
 
